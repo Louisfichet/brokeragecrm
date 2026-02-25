@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+.next/
+out/
+
+# Prisma
+packages/database/src/generated/
+
+# Environment
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Turbo
+.turbo/
+
+# IDE
+.vscode/settings.json
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Testing
+coverage/

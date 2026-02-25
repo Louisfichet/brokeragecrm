@@ -1,0 +1,740 @@
+// ============================================
+// CRM Brokerage — Schema Prisma complet
+// ============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  ADMIN
+  BROKER
+}
+
+enum PersonType {
+  OWNER
+  INTERMEDIARY
+  PRIVATE_BUYER
+  INSTITUTIONAL
+  NOTARY
+  TENANT
+}
+
+enum CompanyType {
+  FONCIERE
+  AGENCY
+  CABINET
+  OTHER
+}
+
+enum RelationStatus {
+  ACTIVE
+  DORMANT
+  BLACKLISTED
+}
+
+enum DocumentType {
+  IMAGE
+  PDF
+  WORD
+  OTHER
+}
+
+enum SignatureStatus {
+  NONE
+  PENDING
+  SENT
+  VIEWED
+  SIGNED
+  COMPLETED
+}
+
+enum OccupationType {
+  FULLY_RENTED
+  PARTIALLY_RENTED
+  VACANT
+}
+
+enum PropertyCondition {
+  NO_WORK
+  LIGHT_WORK
+  HEAVY_WORK
+}
+
+enum BailType {
+  COMMERCIAL
+  RESIDENTIAL
+  BAIL_369
+  PROFESSIONAL
+  OTHER
+}
+
+enum DPE {
+  A
+  B
+  C
+  D
+  E
+  F
+  G
+}
+
+enum UrgencyLevel {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum ContactRole {
+  OWNER
+  INTERMEDIARY
+  BUYER
+  NOTARY
+  TENANT
+  OTHER
+}
+
+enum MatchingStatus {
+  SUGGESTED
+  VALIDATED
+  SENT
+  ACCEPTED
+  REJECTED
+}
+
+enum EmailDirection {
+  INBOUND
+  OUTBOUND
+}
+
+// ============================================
+// USERS & AUTH
+// ============================================
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String?
+  firstName     String
+  lastName      String
+  avatarUrl     String?
+  role          UserRole @default(BROKER)
+  isActive      Boolean  @default(true)
+  googleId      String?  @unique
+  lastLoginAt   DateTime?
+  inactivityTimeout Int  @default(30) // minutes
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  createdAssets  Asset[]        @relation("AssetCreatedBy")
+  assignedAssets Asset[]        @relation("AssetAssignedTo")
+  journalEntries JournalEntry[]
+  annotations    Annotation[]
+  notifications  Notification[]
+  emailAccounts  EmailAccount[]
+  auditLogs      AuditLog[]
+
+  @@index([email])
+  @@index([role])
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@index([token])
+  @@map("refresh_tokens")
+}
+
+// ============================================
+// CONFIGURATION PERSONNALISABLE
+// ============================================
+
+model PipelineStatus {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  color       String  @default("#3b82f6")
+  order       Int
+  isDefault   Boolean @default(false)
+  isArchived  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  assets Asset[]
+
+  @@unique([name])
+  @@index([order])
+  @@map("pipeline_statuses")
+}
+
+model AssetTypeConfig {
+  id         String  @id @default(cuid())
+  name       String  @unique
+  icon       String?
+  isArchived Boolean @default(false)
+  order      Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  assets Asset[]
+
+  @@map("asset_type_configs")
+}
+
+model PersonTypeConfig {
+  id         String  @id @default(cuid())
+  name       String  @unique
+  isArchived Boolean @default(false)
+  order      Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("person_type_configs")
+}
+
+model ActionTypeConfig {
+  id         String  @id @default(cuid())
+  name       String  @unique
+  icon       String?
+  isArchived Boolean @default(false)
+  order      Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  journalEntries JournalEntry[]
+
+  @@map("action_type_configs")
+}
+
+// ============================================
+// ASSETS (BIENS IMMOBILIERS)
+// ============================================
+
+model Asset {
+  id        String @id @default(cuid())
+  reference String @unique // Auto-généré: 2026-042
+
+  // Bloc 1 — Informations générales
+  statusId    String?
+  status      PipelineStatus? @relation(fields: [statusId], references: [id])
+  assetTypeId String?
+  assetType   AssetTypeConfig? @relation(fields: [assetTypeId], references: [id])
+  source      String?          // site web, réseau, apport intermédiaire, autre
+  sourceUrl   String?          // lien vers l'annonce d'origine
+  discoveredAt DateTime?
+  firstContactAt DateTime?
+
+  // Bloc 2 — Localisation
+  address    String?
+  zipCode    String?
+  city       String?
+  department String?
+  latitude   Float?
+  longitude  Float?
+  distanceFromParis    Float? // km
+  travelTimeFromParis  Int?   // minutes
+
+  // Bloc 3 — Caractéristiques physiques
+  surface       Float?   // m²
+  nbUnits       Int?     // nombre d'appartements/lots
+  floor         String?
+  hasExterior   Boolean?
+  exteriorDetails String?
+  hasElevator   Boolean?
+  hasCellar     Boolean?
+  hasGarage     Boolean?
+  hasParking    Boolean?
+  generalCondition PropertyCondition?
+  workDescription  String?
+  estimatedWorkCost Float? // €
+  dpe           DPE?
+
+  // Bloc 4 — Données financières
+  askingPrice       Float?  // Prix de mise en vente €
+  pricePerSqm       Float?  // Prix au m² (calculé)
+  yieldAEM          Float?  // Taux de rendement AEM (calculé)
+  proposalAEM       Float?  // Proposition AEM
+  annualCharges     Float?  // Charges annuelles €/an
+  propertyTax       Float?  // Taxe foncière €/an
+  currentRentHCHT   Float?  // Loyer actuel HC HT €/an
+  potentialRentHCHT Float?  // Loyer potentiel €/an
+  rentalIncomeHCHT  Float?  // Revenus locatifs HC HT €/an
+
+  // Bloc 5 — Informations locatives
+  occupation     OccupationType?
+  bailType       BailType?
+  bailEndDate    DateTime?
+  hasTenantInPlace Boolean?
+  saleUrgency    UrgencyLevel?
+  ownerMotivation String?
+
+  // Champs personnalisés (stockés en JSON)
+  customFields Json? @default("{}")
+
+  // Métadonnées
+  createdById  String?
+  createdBy    User?   @relation("AssetCreatedBy", fields: [createdById], references: [id])
+  assignedToId String?
+  assignedTo   User?   @relation("AssetAssignedTo", fields: [assignedToId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  contacts      AssetContact[]
+  documents     Document[]
+  journalEntries JournalEntry[]
+  matchings     Matching[]
+  emails        Email[]
+
+  @@index([statusId])
+  @@index([assetTypeId])
+  @@index([city])
+  @@index([department])
+  @@index([askingPrice])
+  @@index([yieldAEM])
+  @@index([assignedToId])
+  @@index([createdAt])
+  @@index([reference])
+  @@map("assets")
+}
+
+// ============================================
+// PERSONNES & SOCIÉTÉS
+// ============================================
+
+model Person {
+  id        String @id @default(cuid())
+  firstName String
+  lastName  String
+  email     String?
+  phone     String?
+  phone2    String?
+  position  String?     // Poste / fonction
+  type      PersonType  @default(OWNER)
+
+  // Relation société
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  // Statut & source
+  relationStatus RelationStatus @default(ACTIVE)
+  source         String?
+  notes          String?
+
+  // Cahier des charges (pour acheteurs privés)
+  buyerCriteriaId String?       @unique
+  buyerCriteria   BuyerCriteria? @relation("PersonBuyerCriteria")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  assetContacts  AssetContact[]
+  documents      Document[]     @relation("PersonDocuments")
+  journalEntries JournalEntry[] @relation("PersonJournal")
+  matchingsAsBuyer Matching[]   @relation("MatchingPerson")
+  emails         Email[]        @relation("PersonEmails")
+
+  @@index([type])
+  @@index([lastName])
+  @@index([email])
+  @@index([companyId])
+  @@map("persons")
+}
+
+model Company {
+  id       String      @id @default(cuid())
+  name     String
+  type     CompanyType @default(OTHER)
+  sector   String?     // secteur d'activité
+  address  String?
+  website  String?
+
+  // Statut & source
+  relationStatus RelationStatus @default(ACTIVE)
+  source         String?
+  notes          String?
+
+  // Cahier des charges investisseur
+  buyerCriteriaId String?       @unique
+  buyerCriteria   BuyerCriteria? @relation("CompanyBuyerCriteria")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  contacts       Person[]
+  assetContacts  AssetContact[]
+  documents      Document[]     @relation("CompanyDocuments")
+  journalEntries JournalEntry[] @relation("CompanyJournal")
+  matchingsAsBuyer Matching[]   @relation("MatchingCompany")
+  emails         Email[]        @relation("CompanyEmails")
+
+  @@index([name])
+  @@index([type])
+  @@index([relationStatus])
+  @@map("companies")
+}
+
+// ============================================
+// CAHIER DES CHARGES INVESTISSEUR
+// ============================================
+
+model BuyerCriteria {
+  id             String   @id @default(cuid())
+  assetTypes     String[] // Types de biens recherchés
+  zones          String[] // Zones géographiques
+  maxDistanceParis Float? // km depuis Paris
+  budgetMin      Float?
+  budgetMax      Float?
+  minYield       Float?   // Rendement minimum requis
+  occupation     OccupationType?
+  condition      PropertyCondition?
+  bailType       BailType?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations (un cahier des charges appartient à une société OU une personne)
+  person  Person?  @relation("PersonBuyerCriteria", fields: [personId], references: [id])
+  personId String? @unique
+  company Company? @relation("CompanyBuyerCriteria", fields: [companyId], references: [id])
+  companyId String? @unique
+
+  @@map("buyer_criteria")
+}
+
+// ============================================
+// TABLE PIVOT — CONTACTS LIÉS AUX BIENS
+// ============================================
+
+model AssetContact {
+  id        String      @id @default(cuid())
+  role      ContactRole @default(OTHER)
+
+  assetId   String
+  asset     Asset   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  personId  String?
+  person    Person? @relation(fields: [personId], references: [id])
+
+  companyId String?
+  company   Company? @relation(fields: [companyId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@unique([assetId, personId, role])
+  @@unique([assetId, companyId, role])
+  @@index([assetId])
+  @@index([personId])
+  @@index([companyId])
+  @@map("asset_contacts")
+}
+
+// ============================================
+// DOCUMENTS & ANNOTATIONS
+// ============================================
+
+model Document {
+  id           String         @id @default(cuid())
+  name         String
+  type         DocumentType   @default(OTHER)
+  filePath     String
+  mimeType     String?
+  fileSize     Int?           // bytes
+  signatureStatus SignatureStatus @default(NONE)
+  docusealId   String?        // ID dans Docuseal si envoyé pour signature
+
+  // Relations polymorphes — un document est lié à un asset, une personne ou une société
+  assetId   String?
+  asset     Asset?   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  personId  String?
+  person    Person?  @relation("PersonDocuments", fields: [personId], references: [id])
+
+  companyId String?
+  company   Company? @relation("CompanyDocuments", fields: [companyId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  annotations Annotation[]
+
+  @@index([assetId])
+  @@index([personId])
+  @@index([companyId])
+  @@index([type])
+  @@map("documents")
+}
+
+model Annotation {
+  id       String @id @default(cuid())
+  content  Json   // Données d'annotation (positions, texte, formes...)
+  page     Int?   // Numéro de page pour les PDFs
+
+  documentId String
+  document   Document @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([documentId])
+  @@map("annotations")
+}
+
+// ============================================
+// JOURNAL DE BORD
+// ============================================
+
+model JournalEntry {
+  id      String @id @default(cuid())
+  content String
+
+  // Type d'action (personnalisable)
+  actionTypeId String?
+  actionType   ActionTypeConfig? @relation(fields: [actionTypeId], references: [id])
+
+  // Auteur
+  authorId String
+  author   User   @relation(fields: [authorId], references: [id])
+
+  // Relations polymorphes — une entrée est liée à un asset, une personne ou une société
+  assetId   String?
+  asset     Asset?   @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  personId  String?
+  person    Person?  @relation("PersonJournal", fields: [personId], references: [id])
+
+  companyId String?
+  company   Company? @relation("CompanyJournal", fields: [companyId], references: [id])
+
+  // Auto-generated (changements de statut, etc.)
+  isAutoGenerated Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assetId, createdAt])
+  @@index([personId, createdAt])
+  @@index([companyId, createdAt])
+  @@index([authorId])
+  @@index([createdAt])
+  @@map("journal_entries")
+}
+
+// ============================================
+// MATCHING BIEN ↔ ACHETEUR
+// ============================================
+
+model Matching {
+  id    String         @id @default(cuid())
+  score Float          // Score de compatibilité (0-100)
+  status MatchingStatus @default(SUGGESTED)
+
+  // Le bien concerné
+  assetId String
+  asset   Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  // L'acheteur (personne OU société)
+  personId  String?
+  person    Person?  @relation("MatchingPerson", fields: [personId], references: [id])
+
+  companyId String?
+  company   Company? @relation("MatchingCompany", fields: [companyId], references: [id])
+
+  // Détail du matching (quels critères ont matché)
+  matchDetails Json? // { "type": true, "zone": true, "budget": true, ... }
+
+  sentAt     DateTime? // Date d'envoi au partenaire
+  respondedAt DateTime? // Date de réponse
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([assetId, personId])
+  @@unique([assetId, companyId])
+  @@index([assetId])
+  @@index([personId])
+  @@index([companyId])
+  @@index([score])
+  @@index([status])
+  @@map("matchings")
+}
+
+// ============================================
+// NOTIFICATIONS & ALERTES
+// ============================================
+
+model Notification {
+  id      String  @id @default(cuid())
+  title   String
+  message String
+  type    String  // alert_inactive, signature_pending, new_match, etc.
+  isRead  Boolean @default(false)
+  link    String? // URL vers la ressource concernée
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId, isRead])
+  @@index([createdAt])
+  @@map("notifications")
+}
+
+// ============================================
+// EMAIL INTEGRATION
+// ============================================
+
+model EmailAccount {
+  id           String @id @default(cuid())
+  emailAddress String
+  smtpHost     String
+  smtpPort     Int    @default(587)
+  imapHost     String
+  imapPort     Int    @default(993)
+  username     String
+  password     String // Chiffré en base
+  isActive     Boolean @default(true)
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  emails Email[]
+
+  @@index([userId])
+  @@map("email_accounts")
+}
+
+model Email {
+  id        String         @id @default(cuid())
+  messageId String?        @unique // ID du message IMAP
+  subject   String
+  body      String
+  bodyHtml  String?
+  from      String
+  to        String[]
+  cc        String[]       @default([])
+  direction EmailDirection
+
+  // Pièces jointes
+  hasAttachments Boolean @default(false)
+
+  // Compte email utilisé
+  accountId String
+  account   EmailAccount @relation(fields: [accountId], references: [id])
+
+  // Relations avec les entités CRM
+  assetId   String?
+  asset     Asset?   @relation(fields: [assetId], references: [id])
+
+  personId  String?
+  person    Person?  @relation("PersonEmails", fields: [personId], references: [id])
+
+  companyId String?
+  company   Company? @relation("CompanyEmails", fields: [companyId], references: [id])
+
+  sentAt    DateTime?
+  receivedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([accountId])
+  @@index([assetId])
+  @@index([personId])
+  @@index([companyId])
+  @@index([sentAt])
+  @@map("emails")
+}
+
+// ============================================
+// TEMPLATES DE DOCUMENTS
+// ============================================
+
+model DocumentTemplate {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  filePath    String  // Chemin vers le template .docx
+  variables   Json    // Liste des variables disponibles dans le template
+  requiresSignature Boolean @default(false)
+  isActive    Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("document_templates")
+}
+
+// ============================================
+// PARAMÈTRES CRM
+// ============================================
+
+model CrmSetting {
+  id    String @id @default(cuid())
+  key   String @unique
+  value Json
+  group String @default("general") // general, alerts, email, etc.
+
+  updatedAt DateTime @updatedAt
+
+  @@index([group])
+  @@map("crm_settings")
+}
+
+// ============================================
+// AUDIT LOG
+// ============================================
+
+model AuditLog {
+  id         String  @id @default(cuid())
+  action     String  // CREATE, UPDATE, DELETE, LOGIN, EXPORT, etc.
+  entityType String  // Asset, Person, Company, Document, etc.
+  entityId   String?
+  changes    Json?   // { before: {...}, after: {...} }
+  ipAddress  String?
+
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([userId])
+  @@index([createdAt])
+  @@index([action])
+  @@map("audit_logs")
+}
