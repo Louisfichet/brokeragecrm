@@ -176,7 +176,8 @@ function expandRecurringEvent(
       if (exception?.isCancelled) {
         // Skip cancelled occurrences
       } else {
-        const { exceptions: _exceptions, ...eventData } = event;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { exceptions: _exc, ...eventData } = event;
         occurrences.push({
           ...eventData,
           // Apply exception overrides
