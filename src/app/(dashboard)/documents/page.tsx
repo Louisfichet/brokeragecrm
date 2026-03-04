@@ -37,7 +37,6 @@ const TYPE_LABELS: Record<string, string> = {
   NDA_TYPE1: "NDA — Parkto divulgue",
   NDA_TYPE2: "NDA — Autre divulgue",
   INTERCAB: "Intercab",
-  MANDAT: "Mandat de recherche",
 };
 
 const STATUS_CONFIG: Record<
@@ -182,7 +181,6 @@ export default function DocumentsPage() {
               <option value="NDA_TYPE1">NDA — Parkto divulgue</option>
               <option value="NDA_TYPE2">NDA — Autre divulgue</option>
               <option value="INTERCAB">Intercab</option>
-              <option value="MANDAT">Mandat de recherche</option>
             </select>
           </div>
 

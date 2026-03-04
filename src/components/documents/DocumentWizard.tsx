@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   ArrowLeft,
   ArrowRight,
@@ -12,11 +12,15 @@ import {
   Check,
   Building2,
   User,
+  Eye,
+  ClipboardList,
+  Loader2,
 } from "lucide-react";
 import Button from "@/components/ui/Button";
 import Input from "@/components/ui/Input";
 import CrmSearch from "./CrmSearch";
 import PropertySearch from "./PropertySearch";
+import DocumentPreview from "./DocumentPreview";
 
 // Types
 interface CrmEntity {
@@ -129,6 +133,7 @@ export default function DocumentWizard({
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<WizardFormData>(initialFormData);
   const [saving, setSaving] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const [error, setError] = useState("");
 
   const totalSteps = 4;
@@ -239,6 +244,70 @@ export default function DocumentWizard({
     }
   };
 
+  const handleSaveAndGenerate = async () => {
+    setGenerating(true);
+    setError("");
+
+    try {
+      const companyId =
+        form.affiliatedCompany?.type === "company"
+          ? form.affiliatedCompany.id
+          : form.counterparty?.type === "company"
+          ? form.counterparty.id
+          : null;
+
+      const contactId =
+        form.counterparty?.type === "contact"
+          ? form.counterparty.id
+          : null;
+
+      if (!companyId && !contactId) {
+        setError("Une contrepartie est requise");
+        setGenerating(false);
+        return;
+      }
+
+      // 1. Créer le brouillon
+      const res = await fetch("/api/documents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: form.documentType,
+          companyId,
+          contactId,
+          propertyId: form.linkedProperty ? form.property?.id : null,
+          counterpartyName: form.counterparty?.name || "",
+          formData: form,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        setError(data.error || "Erreur lors de la sauvegarde");
+        return;
+      }
+
+      const doc = await res.json();
+
+      // 2. Générer le PDF
+      const pdfRes = await fetch(`/api/documents/${doc.id}/generate`, {
+        method: "POST",
+      });
+
+      if (pdfRes.ok) {
+        const blob = await pdfRes.blob();
+        const url = URL.createObjectURL(blob);
+        window.open(url, "_blank");
+      }
+
+      onCreated();
+    } catch {
+      setError("Erreur réseau");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
@@ -306,10 +375,25 @@ export default function DocumentWizard({
 
           <div className="flex gap-2">
             {step === totalSteps ? (
-              <Button onClick={handleSaveDraft} loading={saving}>
-                <Save className="w-4 h-4" />
-                Sauvegarder le brouillon
-              </Button>
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={handleSaveDraft}
+                  loading={saving}
+                  disabled={generating}
+                >
+                  <Save className="w-4 h-4" />
+                  Brouillon
+                </Button>
+                <Button
+                  onClick={handleSaveAndGenerate}
+                  loading={generating}
+                  disabled={saving}
+                >
+                  <FileText className="w-4 h-4" />
+                  Sauvegarder et générer le PDF
+                </Button>
+              </>
             ) : (
               <Button
                 onClick={() => setStep(step + 1)}
@@ -732,99 +816,178 @@ function Step3NDA({
 
 
 // ============================================
-// STEP 4 — Récapitulatif
+// STEP 4 — Récapitulatif + Aperçu
 // ============================================
 
 function Step4({ form }: { form: WizardFormData }) {
   const docType = DOC_TYPES.find((d) => d.type === form.documentType);
+  const [tab, setTab] = useState<"recap" | "preview">("recap");
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const [sections, setSections] = useState<any[]>([]);
+  const [companyName, setCompanyName] = useState("PARKTO");
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState("");
+
+  const fetchPreview = useCallback(async () => {
+    if (!form.documentType) return;
+    setPreviewLoading(true);
+    setPreviewError("");
+    try {
+      const res = await fetch("/api/documents/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: form.documentType,
+          formData: form,
+          propertyId: form.linkedProperty ? form.property?.id : null,
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setSections(data.sections);
+        setCompanyName(data.companyName || "PARKTO");
+      } else {
+        const data = await res.json();
+        setPreviewError(data.error || "Erreur de prévisualisation");
+      }
+    } catch {
+      setPreviewError("Erreur réseau");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [form]);
+
+  useEffect(() => {
+    fetchPreview();
+  }, [fetchPreview]);
 
   return (
-    <div className="space-y-5">
-      <div>
-        <h3 className="text-lg font-semibold text-navy-900 mb-1">
+    <div className="space-y-4">
+      {/* Tabs */}
+      <div className="flex gap-1 bg-navy-50 rounded-xl p-1">
+        <button
+          onClick={() => setTab("recap")}
+          className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+            tab === "recap"
+              ? "bg-white text-navy-900 shadow-sm"
+              : "text-navy-500 hover:text-navy-700"
+          }`}
+        >
+          <ClipboardList className="w-4 h-4" />
           Récapitulatif
-        </h3>
-        <p className="text-sm text-navy-500 mb-6">
-          Vérifiez les informations avant de sauvegarder le brouillon
-        </p>
+        </button>
+        <button
+          onClick={() => setTab("preview")}
+          className={`flex-1 flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+            tab === "preview"
+              ? "bg-white text-navy-900 shadow-sm"
+              : "text-navy-500 hover:text-navy-700"
+          }`}
+        >
+          <Eye className="w-4 h-4" />
+          Aperçu document
+        </button>
       </div>
 
-      <div className="bg-navy-50 rounded-xl p-5 space-y-4">
-        <RecapRow label="Type de document" value={docType?.label || ""} />
-        <RecapRow
-          label="Contrepartie"
-          value={form.counterparty?.name || "—"}
-        />
-        <RecapRow
-          label="Type contrepartie"
-          value={
-            form.counterparty?.type === "company"
-              ? "Société"
-              : "Personne physique"
-          }
-        />
-
-        {form.counterparty?.type === "company" &&
-          form.counterpartyRaisonSociale && (
+      {/* Recap tab */}
+      {tab === "recap" && (
+        <>
+          <div className="bg-navy-50 rounded-xl p-5 space-y-4">
+            <RecapRow label="Type de document" value={docType?.label || ""} />
             <RecapRow
-              label="Société"
-              value={`${form.counterpartyRaisonSociale}${form.counterpartySiret ? ` — ${form.counterpartySiret}` : ""}`}
+              label="Contrepartie"
+              value={form.counterparty?.name || "—"}
             />
-          )}
-        {form.counterparty?.type === "contact" && form.counterpartyNom && (
-          <RecapRow
-            label="Personne"
-            value={`${form.counterpartyCivilite} ${form.counterpartyPrenom} ${form.counterpartyNom}`.trim()}
-          />
-        )}
+            <RecapRow
+              label="Type contrepartie"
+              value={
+                form.counterparty?.type === "company"
+                  ? "Société"
+                  : "Personne physique"
+              }
+            />
 
-        {form.affiliatedCompany && (
-          <RecapRow
-            label="Société affiliée"
-            value={form.affiliatedCompany.name}
-          />
-        )}
-        <RecapRow
-          label="Bien lié"
-          value={
-            form.linkedProperty && form.property
-              ? `${form.property.reference} — ${form.property.address}`
-              : "Non"
-          }
-        />
-        <RecapRow
-          label="Date"
-          value={new Date(form.documentDate).toLocaleDateString("fr-FR")}
-        />
-
-        {(form.documentType === "NDA_TYPE1" ||
-          form.documentType === "NDA_TYPE2") &&
-          form.linkedProperty && (
-            <>
-              <div className="h-px bg-navy-200" />
+            {form.counterparty?.type === "company" &&
+              form.counterpartyRaisonSociale && (
+                <RecapRow
+                  label="Société"
+                  value={`${form.counterpartyRaisonSociale}${form.counterpartySiret ? ` — ${form.counterpartySiret}` : ""}`}
+                />
+              )}
+            {form.counterparty?.type === "contact" && form.counterpartyNom && (
               <RecapRow
-                label="Commission"
-                value={`${form.tauxCommission}% — ${form.montantCommission} €`}
+                label="Personne"
+                value={`${form.counterpartyCivilite} ${form.counterpartyPrenom} ${form.counterpartyNom}`.trim()}
               />
-            </>
-          )}
+            )}
 
-        {form.documentType === "INTERCAB" && (
-          <>
-            <div className="h-px bg-navy-200" />
-            <RecapRow label="Répartition" value="50% / 50% HT" />
+            {form.affiliatedCompany && (
+              <RecapRow
+                label="Société affiliée"
+                value={form.affiliatedCompany.name}
+              />
+            )}
             <RecapRow
-              label="Versement"
-              value="Double virement notaire (priorité) ou reversement sous 15j"
+              label="Bien lié"
+              value={
+                form.linkedProperty && form.property
+                  ? `${form.property.reference} — ${form.property.address}`
+                  : "Non"
+              }
             />
-          </>
-        )}
-      </div>
+            <RecapRow
+              label="Date"
+              value={new Date(form.documentDate).toLocaleDateString("fr-FR")}
+            />
 
-      <div className="bg-amber-50 rounded-xl p-4 text-sm text-amber-700">
-        Le document sera sauvegardé en tant que <strong>brouillon</strong>. Vous
-        pourrez ensuite générer le PDF et l&apos;envoyer pour signature.
-      </div>
+            {(form.documentType === "NDA_TYPE1" ||
+              form.documentType === "NDA_TYPE2") &&
+              form.linkedProperty && (
+                <>
+                  <div className="h-px bg-navy-200" />
+                  <RecapRow
+                    label="Commission"
+                    value={`${form.tauxCommission}% — ${form.montantCommission} €`}
+                  />
+                </>
+              )}
+
+            {form.documentType === "INTERCAB" && (
+              <>
+                <div className="h-px bg-navy-200" />
+                <RecapRow label="Répartition" value="50% / 50% HT" />
+                <RecapRow
+                  label="Versement"
+                  value="Double virement notaire (priorité) ou reversement sous 15j"
+                />
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Preview tab */}
+      {tab === "preview" && (
+        <div>
+          {previewLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-primary-500" />
+              <span className="ml-2 text-sm text-navy-500">Génération de l&apos;aperçu...</span>
+            </div>
+          ) : previewError ? (
+            <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
+              {previewError}
+            </div>
+          ) : (
+            <div className="max-h-[50vh] overflow-y-auto rounded-xl border border-navy-200">
+              <DocumentPreview
+                sections={sections}
+                companyName={companyName}
+              />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
