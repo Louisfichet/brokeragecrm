@@ -1,0 +1,623 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum Role {
+  ADMIN
+  FREELANCE
+}
+
+enum CompanyTypeEnum {
+  APPORTEUR
+  ACHETEUR
+  PROPRIETAIRE
+}
+
+enum ProposalStatus {
+  ACTIF
+  REFUSE
+}
+
+enum RentPeriod {
+  MENSUEL
+  ANNUEL
+}
+
+enum RecurrenceType {
+  NONE
+  QUOTIDIEN
+  HEBDOMADAIRE
+  MENSUEL
+}
+
+enum DocumentType {
+  NDA_TYPE1
+  NDA_TYPE2
+  INTERCAB
+  MANDAT
+}
+
+enum DocumentStatus {
+  DRAFT
+  GENERATED
+  SENT
+  SIGNED
+  EXPIRED
+}
+
+// ============================================
+// USER
+// ============================================
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  password  String
+  name      String
+  role      Role     @default(FREELANCE)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  propertiesCreated     Property[]
+  eventsCreated         CalendarEvent[]    @relation("eventsCreated")
+  eventParticipations   EventParticipant[]
+  documentsCreated      GeneratedDocument[]
+  activityLogs          ActivityLog[]
+
+  @@map("users")
+}
+
+// ============================================
+// COMPANY (Société)
+// ============================================
+
+model Company {
+  id          String   @id @default(cuid())
+  name        String
+  website     String?
+  description String?
+  isHidden    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+
+  // Informations juridiques
+  formeJuridique  String?
+  capitalSocial   String?
+  siret           String?
+  villeRCS        String?
+  adresseSiege    String?
+  representantCivilite String?
+  representantPrenom   String?
+  representantNom      String?
+  representantQualite  String?
+
+  types     CompanyType[]
+  contacts  Contact[]
+  notes     CompanyNote[]
+  documents CompanyDocument[]
+  specs     CompanySpec[]
+
+  propertiesApported    Property[]
+  proposalsReceived     PropertyProposal[]
+  events                CalendarEvent[]
+  generatedDocuments    GeneratedDocument[]
+
+  @@map("companies")
+}
+
+model CompanyType {
+  id        String          @id @default(cuid())
+  companyId String
+  type      CompanyTypeEnum
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, type])
+  @@map("company_types")
+}
+
+model CompanyNote {
+  id        String   @id @default(cuid())
+  companyId String
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("company_notes")
+}
+
+model CompanyDocument {
+  id        String   @id @default(cuid())
+  companyId String
+  title     String
+  note      String?
+  filePath  String
+  fileName  String
+  mimeType  String?
+  size      Int?
+  createdAt DateTime @default(now())
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("company_documents")
+}
+
+model CompanySpec {
+  id            String   @id @default(cuid())
+  companyId     String
+  budgetMin     Float?
+  budgetMax     Float?
+  propertyTypes String[]
+  locations     String[]
+  minYield      Float?
+  freeText      String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  company  Company                @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  criteria CompanySpecCriterion[]
+
+  @@map("company_specs")
+}
+
+model CompanySpecCriterion {
+  id     String @id @default(cuid())
+  specId String
+  label  String
+  value  String
+
+  spec CompanySpec @relation(fields: [specId], references: [id], onDelete: Cascade)
+
+  @@map("company_spec_criteria")
+}
+
+// ============================================
+// CONTACT
+// ============================================
+
+model Contact {
+  id          String   @id @default(cuid())
+  firstName   String
+  lastName    String?
+  email       String?
+  phone       String?
+  role        String?
+  companyId   String?
+  isHidden    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+
+  // Informations juridiques
+  civilite    String?
+  adresse     String?
+
+  company            Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  propertiesApported Property[] @relation("ContactApporter")
+  proposalsReceived  PropertyProposal[]
+  notes              ContactNote[]
+  documents          ContactDocument[]
+  events             CalendarEvent[]
+  eventGuests        EventExternalGuest[]
+  generatedDocuments GeneratedDocument[]
+
+  @@map("contacts")
+}
+
+model ContactNote {
+  id        String   @id @default(cuid())
+  contactId String
+  title     String
+  content   String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@map("contact_notes")
+}
+
+model ContactDocument {
+  id        String   @id @default(cuid())
+  contactId String
+  title     String
+  note      String?
+  filePath  String
+  fileName  String
+  mimeType  String?
+  size      Int?
+  createdAt DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@map("contact_documents")
+}
+
+// ============================================
+// PROPERTY (Bien)
+// ============================================
+
+model Property {
+  id           String      @id @default(cuid())
+  reference    String      @unique
+  address      String
+  city         String?
+  postalCode   String?
+  lat          Float?
+  lng          Float?
+  propertyType String?
+  rentHT       Float?
+  rentPeriod   RentPeriod?
+  priceFAI     Float?
+  isHidden     Boolean     @default(false)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  createdById String
+  createdBy   User @relation(fields: [createdById], references: [id])
+
+  apportedByCompanyId String?
+  apportedByCompany   Company? @relation(fields: [apportedByCompanyId], references: [id], onDelete: SetNull)
+
+  apportedByContactId String?
+  apportedByContact   Contact? @relation("ContactApporter", fields: [apportedByContactId], references: [id], onDelete: SetNull)
+
+  characteristics    PropertyCharacteristic[]
+  photos             PropertyPhoto[]
+  documents          PropertyDocument[]
+  notes              PropertyNote[]
+  proposals          PropertyProposal[]
+  events             CalendarEvent[]
+  generatedDocuments GeneratedDocument[]
+
+  @@map("properties")
+}
+
+model PropertyCharacteristic {
+  id         String @id @default(cuid())
+  propertyId String
+  label      String
+  value      String
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("property_characteristics")
+}
+
+model PropertyPhoto {
+  id         String   @id @default(cuid())
+  propertyId String
+  filePath   String
+  fileName   String
+  mimeType   String?
+  size       Int?
+  order      Int      @default(0)
+  createdAt  DateTime @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("property_photos")
+}
+
+model PropertyDocument {
+  id         String   @id @default(cuid())
+  propertyId String
+  title      String
+  note       String?
+  filePath   String
+  fileName   String
+  mimeType   String?
+  size       Int?
+  createdAt  DateTime @default(now())
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("property_documents")
+}
+
+model PropertyNote {
+  id         String   @id @default(cuid())
+  propertyId String
+  title      String
+  content    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@map("property_notes")
+}
+
+// ============================================
+// PROPOSAL (Proposition bien → société ou contact)
+// ============================================
+
+model PropertyProposal {
+  id         String         @id @default(cuid())
+  propertyId String
+  companyId  String?
+  contactId  String?
+  status     ProposalStatus @default(ACTIF)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  company  Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contact  Contact? @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  notes    ProposalNote[]
+
+  @@unique([propertyId, companyId])
+  @@unique([propertyId, contactId])
+  @@map("property_proposals")
+}
+
+model ProposalNote {
+  id         String   @id @default(cuid())
+  proposalId String
+  title      String
+  content    String
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  proposal PropertyProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@map("proposal_notes")
+}
+
+// ============================================
+// PROPERTY TYPE LABELS (catalogue types de bien)
+// ============================================
+
+model PropertyTypeLabel {
+  id        String   @id @default(cuid())
+  label     String   @unique
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("property_type_labels")
+}
+
+// ============================================
+// CHARACTERISTIC LABELS (catalogue global)
+// ============================================
+
+model CharacteristicLabel {
+  id        String   @id @default(cuid())
+  label     String   @unique
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("characteristic_labels")
+}
+
+// ============================================
+// REFERENCE COUNTER (pour AAAA-NNN)
+// ============================================
+
+model ReferenceCounter {
+  id    String @id @default(cuid())
+  year  Int    @unique
+  count Int    @default(0)
+
+  @@map("reference_counters")
+}
+
+// ============================================
+// CALENDAR (Calendrier)
+// ============================================
+
+model CalendarEvent {
+  id            String         @id @default(cuid())
+  title         String
+  date          DateTime
+  startTime     String?        // Format HH:mm
+  endTime       String?        // Format HH:mm
+  isAllDay      Boolean        @default(false)
+  description   String?
+  link          String?
+  color         String         @default("#3B82F6")
+
+  // Récurrence
+  recurrence    RecurrenceType @default(NONE)
+  recurrenceEnd DateTime?
+
+  // Liaison entité CRM (optionnel)
+  propertyId    String?
+  property      Property?      @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+  companyId     String?
+  company       Company?       @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  contactId     String?
+  contact       Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  // Créateur
+  createdById   String
+  createdBy     User           @relation("eventsCreated", fields: [createdById], references: [id])
+
+  // Relations
+  participants  EventParticipant[]
+  externalGuests EventExternalGuest[]
+  exceptions    EventException[]
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("calendar_events")
+}
+
+model EventParticipant {
+  id      String        @id @default(cuid())
+  eventId String
+  event   CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  userId  String
+  user    User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, userId])
+  @@map("event_participants")
+}
+
+model EventExternalGuest {
+  id        String        @id @default(cuid())
+  eventId   String
+  event     CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  contactId String
+  contact   Contact       @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([eventId, contactId])
+  @@map("event_external_guests")
+}
+
+model EventException {
+  id           String        @id @default(cuid())
+  eventId      String
+  event        CalendarEvent @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  originalDate DateTime
+  isCancelled  Boolean       @default(false)
+  // Champs override
+  title        String?
+  startTime    String?
+  endTime      String?
+  description  String?
+  link         String?
+  color        String?
+
+  @@unique([eventId, originalDate])
+  @@map("event_exceptions")
+}
+
+// ============================================
+// COMPANY SETTINGS (Paramètres société)
+// ============================================
+
+model CompanySettings {
+  id                    String   @id @default(cuid())
+  raisonSociale         String   @default("PARKTO")
+  formeJuridique        String   @default("Société par actions simplifiée")
+  capitalSocial         String   @default("10 000")
+  numeroRCS             String   @default("927 747 204")
+  villeRCS              String   @default("Paris")
+  carteProNumero        String   @default("CPI 9201 2018 000035")
+  carteProMention       String   @default("Rattachée à la carte professionnelle n° CPI 9201 2018 000035 permettant l'exercice de l'activité transactionnelle dans les immeubles et fonds de commerce")
+  assuranceRCP          String   @default("Souscrite le 16/01/2026")
+  adresseSiege          String   @default("55 Bd de Montmorency, 75016 Paris, France")
+  representantCivilite  String   @default("Mr")
+  representantPrenom    String   @default("Moïse")
+  representantNom       String   @default("Amar")
+  representantQualite   String   @default("Représentant légal de Parkto")
+  emailNotification     String?
+  signaturePath         String?
+  tamponPath            String?
+  logoPath              String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  @@map("company_settings")
+}
+
+// ============================================
+// GENERATED DOCUMENTS
+// ============================================
+
+model GeneratedDocument {
+  id              String         @id @default(cuid())
+  reference       String         @unique
+  type            DocumentType
+  status          DocumentStatus @default(DRAFT)
+
+  // Relations CRM (société OU contact, au moins un des deux)
+  companyId       String?
+  company         Company?       @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  contactId       String?
+  contact         Contact?       @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  propertyId      String?
+  property        Property?      @relation(fields: [propertyId], references: [id], onDelete: SetNull)
+
+  // Données du formulaire wizard
+  formData        Json
+
+  // Contenu modifié (si retouches dans l'aperçu brouillon)
+  editedContent   Json?
+
+  // Fichiers PDF
+  pdfPath         String?
+  signedPdfPath   String?
+
+  // DocuSeal
+  docusealId      String?
+  sentTo          String?
+  sentAt          DateTime?
+  signedAt        DateTime?
+  expiresAt       DateTime?
+  lastRemindedAt  DateTime?
+
+  // Métadonnées
+  createdById     String
+  createdBy       User           @relation(fields: [createdById], references: [id])
+  notifications   DocumentNotification[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@map("generated_documents")
+}
+
+// ============================================
+// DOCUMENT NOTIFICATIONS
+// ============================================
+
+model DocumentNotification {
+  id           String            @id @default(cuid())
+  documentId   String
+  document     GeneratedDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  type         String
+  message      String
+  read         Boolean           @default(false)
+  createdAt    DateTime          @default(now())
+
+  @@map("document_notifications")
+}
+
+// ============================================
+// DOCUMENT REFERENCE COUNTER
+// ============================================
+
+model DocumentReferenceCounter {
+  id    String @id @default(cuid())
+  year  Int    @unique
+  count Int    @default(0)
+
+  @@map("document_reference_counters")
+}
+
+// ============================================
+// ACTIVITY LOG
+// ============================================
+
+model ActivityLog {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action      String   // CREATE, UPDATE, DELETE, GENERATE
+  entity      String   // COMPANY, CONTACT, PROPERTY, DOCUMENT, USER, SETTINGS
+  entityId    String?
+  entityLabel String   // Nom lisible (ex: "SCI Parkto", "Jean Dupont")
+  details     Json?    // Détails supplémentaires
+  createdAt   DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([entity])
+  @@index([userId])
+  @@map("activity_logs")
+}
