@@ -5,7 +5,6 @@ import {
   unauthorized,
   serverError,
   badRequest,
-  isAdmin,
 } from "@/lib/api-helpers";
 import { logActivity } from "@/lib/activity-logger";
 

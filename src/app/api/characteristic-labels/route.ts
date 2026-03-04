@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { getSession, unauthorized, serverError } from "@/lib/api-helpers";
 
 // GET /api/characteristic-labels — Catalogue global des labels
-export async function GET(req: NextRequest) {
+export async function GET(_req: NextRequest) {
   const session = await getSession();
   if (!session) return unauthorized();
 

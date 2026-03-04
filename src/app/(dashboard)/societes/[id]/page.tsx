@@ -9,7 +9,6 @@ import {
   Globe,
   Pencil,
   Trash2,
-  Plus,
   UserPlus,
   Mail,
   Phone,

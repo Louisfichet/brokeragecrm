@@ -297,7 +297,6 @@ interface SearchResult {
 function ProposalsSection({
   propertyId,
   proposals,
-  admin,
   onRefresh,
 }: {
   propertyId: string;

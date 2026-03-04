@@ -176,7 +176,7 @@ function expandRecurringEvent(
       if (exception?.isCancelled) {
         // Skip cancelled occurrences
       } else {
-        const { exceptions, ...eventData } = event;
+        const { exceptions: _exceptions, ...eventData } = event;
         occurrences.push({
           ...eventData,
           // Apply exception overrides
