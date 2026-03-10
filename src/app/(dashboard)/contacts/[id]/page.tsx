@@ -18,7 +18,7 @@ import Badge from "@/components/ui/Badge";
 import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
 import NotesSection from "@/components/shared/NotesSection";
-import DocumentsSection from "@/components/shared/DocumentsSection";
+import FileManager from "@/components/shared/FileManager";
 
 interface ContactData {
   id: string;
@@ -40,6 +40,7 @@ interface ContactData {
     filePath: string;
     mimeType: string | null;
     size: number | null;
+    folderId: string | null;
     createdAt: string;
   }[];
   propertiesApported: {
@@ -271,8 +272,10 @@ export default function ContactDetailPage() {
       />
 
       {/* Documents */}
-      <DocumentsSection
+      <FileManager
         documents={contact.documents}
+        entityType="CONTACT"
+        entityId={contactId}
         apiBase={`/api/contacts/${contactId}/documents`}
         isAdmin={admin}
         onRefresh={fetchContact}

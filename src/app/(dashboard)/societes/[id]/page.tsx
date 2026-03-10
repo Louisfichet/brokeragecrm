@@ -22,7 +22,7 @@ import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
 import Textarea from "@/components/ui/Textarea";
 import NotesSection from "@/components/shared/NotesSection";
-import DocumentsSection from "@/components/shared/DocumentsSection";
+import FileManager from "@/components/shared/FileManager";
 import CreateContactModal from "@/components/contacts/CreateContactModal";
 
 const TYPE_LABELS: Record<string, string> = {
@@ -69,6 +69,7 @@ interface CompanyData {
     filePath: string;
     mimeType: string | null;
     size: number | null;
+    folderId: string | null;
     createdAt: string;
   }[];
   specs: {
@@ -424,8 +425,10 @@ export default function CompanyDetailPage() {
       />
 
       {/* Documents */}
-      <DocumentsSection
+      <FileManager
         documents={company.documents}
+        entityType="COMPANY"
+        entityId={companyId}
         apiBase={`/api/companies/${companyId}/documents`}
         isAdmin={admin}
         onRefresh={fetchCompany}

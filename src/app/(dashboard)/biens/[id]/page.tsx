@@ -23,7 +23,9 @@ import Input from "@/components/ui/Input";
 import Textarea from "@/components/ui/Textarea";
 import EmptyState from "@/components/ui/EmptyState";
 import NotesSection from "@/components/shared/NotesSection";
-import DocumentsSection from "@/components/shared/DocumentsSection";
+import FileManager from "@/components/shared/FileManager";
+import AddressAutocomplete from "@/components/properties/AddressAutocomplete";
+import ApporteurSearch from "@/components/properties/ApporteurSearch";
 
 interface PropertyData {
   id: string;
@@ -59,6 +61,7 @@ interface PropertyData {
     filePath: string;
     mimeType: string | null;
     size: number | null;
+    folderId: string | null;
     createdAt: string;
   }[];
   notes: { id: string; title: string; content: string; createdAt: string }[];
@@ -90,6 +93,7 @@ export default function PropertyDetailPage() {
 
   const [property, setProperty] = useState<PropertyData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [showEditModal, setShowEditModal] = useState(false);
 
   const fetchProperty = useCallback(async () => {
     try {
@@ -223,22 +227,27 @@ export default function PropertyDetailPage() {
               </span>
             </div>
           </div>
-          {admin && (
-            <div className="flex gap-2">
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={toggleVisibility}
-                title={property.isHidden ? "Rendre visible aux freelances" : "Cacher aux freelances"}
-              >
-                {property.isHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
-                {property.isHidden ? "Afficher" : "Cacher"}
-              </Button>
-              <Button size="sm" variant="danger" onClick={handleDelete}>
-                <Trash2 className="w-4 h-4" /> Supprimer
-              </Button>
-            </div>
-          )}
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={() => setShowEditModal(true)}>
+              <Pencil className="w-4 h-4" /> Modifier
+            </Button>
+            {admin && (
+              <>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={toggleVisibility}
+                  title={property.isHidden ? "Rendre visible aux freelances" : "Cacher aux freelances"}
+                >
+                  {property.isHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+                  {property.isHidden ? "Afficher" : "Cacher"}
+                </Button>
+                <Button size="sm" variant="danger" onClick={handleDelete}>
+                  <Trash2 className="w-4 h-4" /> Supprimer
+                </Button>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
@@ -266,8 +275,10 @@ export default function PropertyDetailPage() {
       />
 
       {/* Documents */}
-      <DocumentsSection
+      <FileManager
         documents={property.documents}
+        entityType="PROPERTY"
+        entityId={propertyId}
         apiBase={`/api/properties/${propertyId}/documents`}
         isAdmin={admin}
         onRefresh={fetchProperty}
@@ -280,6 +291,434 @@ export default function PropertyDetailPage() {
         isAdmin={admin}
         onRefresh={fetchProperty}
       />
+
+      {/* Modal d'édition du bien */}
+      <EditPropertyModal
+        isOpen={showEditModal}
+        onClose={() => setShowEditModal(false)}
+        property={property}
+        propertyId={propertyId}
+        onSaved={fetchProperty}
+      />
+    </div>
+  );
+}
+
+// ==========================================
+// EDIT PROPERTY MODAL
+// ==========================================
+interface Apporteur {
+  type: "company" | "contact";
+  id: string;
+  name: string;
+}
+
+interface TypeLabel {
+  id: string;
+  label: string;
+}
+
+function EditPropertyModal({
+  isOpen,
+  onClose,
+  property,
+  propertyId,
+  onSaved,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  property: PropertyData;
+  propertyId: string;
+  onSaved: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  // Apporteur
+  const [apporteur, setApporteur] = useState<Apporteur | null>(null);
+
+  // Address
+  const [addressData, setAddressData] = useState<{
+    address: string;
+    city: string;
+    postalCode: string;
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [addressChanged, setAddressChanged] = useState(false);
+
+  // Other fields
+  const [propertyType, setPropertyType] = useState("");
+  const [rentHT, setRentHT] = useState("");
+  const [rentPeriod, setRentPeriod] = useState<"MENSUEL" | "ANNUEL">("ANNUEL");
+  const [priceFAI, setPriceFAI] = useState("");
+
+  // Init state from property when modal opens
+  useEffect(() => {
+    if (isOpen && property) {
+      // Apporteur
+      if (property.apportedByCompany) {
+        setApporteur({
+          type: "company",
+          id: property.apportedByCompany.id,
+          name: property.apportedByCompany.name,
+        });
+      } else if (property.apportedByContact) {
+        setApporteur({
+          type: "contact",
+          id: property.apportedByContact.id,
+          name: `${property.apportedByContact.firstName} ${property.apportedByContact.lastName || ""}`.trim(),
+        });
+      } else {
+        setApporteur(null);
+      }
+
+      // Address (already set, just mark as not changed)
+      setAddressData(null);
+      setAddressChanged(false);
+
+      // Other fields
+      setPropertyType(property.propertyType || "");
+      setRentHT(property.rentHT?.toString() || "");
+      setRentPeriod(property.rentPeriod || "ANNUEL");
+      setPriceFAI(property.priceFAI?.toString() || "");
+      setError("");
+    }
+  }, [isOpen, property]);
+
+  const computedRentability = (() => {
+    const rent = parseFloat(rentHT);
+    const price = parseFloat(priceFAI);
+    if (!rent || !price || price === 0) return null;
+    const annual = rentPeriod === "MENSUEL" ? rent * 12 : rent;
+    return ((annual / price) * 100).toFixed(2);
+  })();
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError("");
+
+    if (!apporteur) {
+      setError("Sélectionnez un apporteur");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const body: Record<string, unknown> = {
+        propertyType: propertyType || null,
+        rentHT: rentHT ? parseFloat(rentHT) : null,
+        rentPeriod,
+        priceFAI: priceFAI ? parseFloat(priceFAI) : null,
+      };
+
+      // Apporteur
+      if (apporteur.type === "company") {
+        body.apportedByCompanyId = apporteur.id;
+      } else {
+        body.apportedByContactId = apporteur.id;
+      }
+
+      // Adresse (seulement si changée)
+      if (addressChanged && addressData) {
+        body.address = addressData.address;
+        body.city = addressData.city;
+        body.postalCode = addressData.postalCode;
+        body.lat = addressData.lat;
+        body.lng = addressData.lng;
+      }
+
+      const res = await fetch(`/api/properties/${propertyId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Erreur lors de la modification");
+      }
+
+      onClose();
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Erreur");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title="Modifier le bien" size="lg">
+      <form onSubmit={handleSubmit} className="space-y-4">
+        {/* Apporteur */}
+        <ApporteurSearch onSelect={setApporteur} selected={apporteur} />
+
+        {/* Adresse actuelle */}
+        {!addressChanged ? (
+          <div className="space-y-1.5">
+            <label className="block text-sm font-medium text-navy-700">Adresse</label>
+            <div className="flex items-center justify-between px-3.5 py-2.5 rounded-xl border border-navy-200 bg-navy-50">
+              <span className="text-sm text-navy-900 truncate">{property.address}</span>
+              <button
+                type="button"
+                onClick={() => setAddressChanged(true)}
+                className="text-xs text-primary-600 hover:text-primary-700 font-medium shrink-0 ml-2"
+              >
+                Changer
+              </button>
+            </div>
+            {(property.city || property.postalCode) && (
+              <div className="flex gap-4 text-sm">
+                <div className="flex-1 px-3 py-2 rounded-lg bg-navy-50 text-navy-700">
+                  <span className="text-navy-500 text-xs">Ville :</span> {property.city || "—"}
+                </div>
+                <div className="flex-1 px-3 py-2 rounded-lg bg-navy-50 text-navy-700">
+                  <span className="text-navy-500 text-xs">CP :</span> {property.postalCode || "—"}
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div>
+            <AddressAutocomplete onSelect={(data) => setAddressData(data)} />
+            {addressData && (
+              <div className="flex gap-4 text-sm mt-2">
+                <div className="flex-1 px-3 py-2 rounded-lg bg-navy-50 text-navy-700">
+                  <span className="text-navy-500 text-xs">Ville :</span> {addressData.city || "—"}
+                </div>
+                <div className="flex-1 px-3 py-2 rounded-lg bg-navy-50 text-navy-700">
+                  <span className="text-navy-500 text-xs">CP :</span> {addressData.postalCode || "—"}
+                </div>
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => {
+                setAddressChanged(false);
+                setAddressData(null);
+              }}
+              className="text-xs text-navy-500 hover:text-navy-700 mt-1"
+            >
+              Annuler le changement
+            </button>
+          </div>
+        )}
+
+        {/* Type de bien */}
+        <EditPropertyTypeSelector value={propertyType} onChange={setPropertyType} />
+
+        {/* Loyer HT + période */}
+        <div className="space-y-1.5">
+          <label className="block text-sm font-medium text-navy-700">Loyer HT</label>
+          <div className="flex gap-2">
+            <div className="relative flex-1">
+              <input
+                type="number"
+                step="0.01"
+                value={rentHT}
+                onChange={(e) => setRentHT(e.target.value)}
+                placeholder="Ex: 36000"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-navy-200 bg-white text-navy-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 pr-8"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-navy-400 text-sm">
+                &euro;
+              </span>
+            </div>
+            <div className="flex rounded-xl border border-navy-200 overflow-hidden shrink-0">
+              <button
+                type="button"
+                onClick={() => setRentPeriod("MENSUEL")}
+                className={`px-3 py-2.5 text-sm font-medium transition-colors ${
+                  rentPeriod === "MENSUEL"
+                    ? "bg-primary-500 text-white"
+                    : "bg-white text-navy-600 hover:bg-navy-50"
+                }`}
+              >
+                /mois
+              </button>
+              <button
+                type="button"
+                onClick={() => setRentPeriod("ANNUEL")}
+                className={`px-3 py-2.5 text-sm font-medium transition-colors ${
+                  rentPeriod === "ANNUEL"
+                    ? "bg-primary-500 text-white"
+                    : "bg-white text-navy-600 hover:bg-navy-50"
+                }`}
+              >
+                /an
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Prix FAI */}
+        <div className="space-y-1.5">
+          <label className="block text-sm font-medium text-navy-700">Prix FAI</label>
+          <div className="relative">
+            <input
+              type="number"
+              step="0.01"
+              value={priceFAI}
+              onChange={(e) => setPriceFAI(e.target.value)}
+              placeholder="Ex: 500000"
+              className="w-full px-3.5 py-2.5 rounded-xl border border-navy-200 bg-white text-navy-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 pr-8"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-navy-400 text-sm">
+              &euro;
+            </span>
+          </div>
+        </div>
+
+        {/* Rentabilité */}
+        {computedRentability && (
+          <div className="px-3.5 py-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-sm">
+            <span className="text-emerald-700 font-medium">
+              Rentabilité : {computedRentability}%
+            </span>
+          </div>
+        )}
+
+        {error && (
+          <p className="text-sm text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>
+        )}
+
+        <div className="flex justify-end gap-3 pt-2">
+          <Button variant="secondary" type="button" onClick={onClose}>
+            Annuler
+          </Button>
+          <Button type="submit" loading={loading}>
+            Enregistrer
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ==========================================
+// EDIT PROPERTY TYPE SELECTOR
+// ==========================================
+function EditPropertyTypeSelector({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [labels, setLabels] = useState<TypeLabel[]>([]);
+  const [loadingCreate, setLoadingCreate] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const fetchLabels = useCallback(async () => {
+    const res = await fetch("/api/property-type-labels");
+    if (res.ok) setLabels(await res.json());
+  }, []);
+
+  useEffect(() => {
+    fetchLabels();
+  }, [fetchLabels]);
+
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const filtered = labels.filter((l) =>
+    l.label.toLowerCase().includes(search.toLowerCase())
+  );
+  const exactMatch = labels.some((l) => l.label.toLowerCase() === search.toLowerCase());
+
+  const selectType = (label: string) => {
+    onChange(label);
+    setSearch("");
+    setOpen(false);
+  };
+
+  const createAndSelect = async () => {
+    if (!search.trim()) return;
+    setLoadingCreate(true);
+    const res = await fetch("/api/property-type-labels", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ label: search.trim() }),
+    });
+    if (res.ok) {
+      const created = await res.json();
+      setLabels((prev) => [...prev, created].sort((a, b) => a.label.localeCompare(b.label)));
+      selectType(created.label);
+    }
+    setLoadingCreate(false);
+  };
+
+  return (
+    <div className="space-y-1.5" ref={containerRef}>
+      <label className="block text-sm font-medium text-navy-700">Type de bien</label>
+      {value ? (
+        <div className="flex items-center gap-2">
+          <div className="flex-1 px-3.5 py-2.5 rounded-xl border border-navy-200 bg-navy-50 text-sm text-navy-900">
+            {value}
+          </div>
+          <button
+            type="button"
+            onClick={() => onChange("")}
+            className="p-2 text-navy-400 hover:text-red-500 transition-colors"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      ) : (
+        <div className="relative">
+          <input
+            ref={inputRef}
+            type="text"
+            placeholder="Rechercher ou créer un type..."
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setOpen(true);
+            }}
+            onFocus={() => setOpen(true)}
+            className="w-full px-3.5 py-2.5 rounded-xl border border-navy-200 bg-white text-navy-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500"
+          />
+          {open && (
+            <div className="absolute z-50 w-full mt-1 rounded-xl border border-navy-200 bg-white shadow-lg max-h-48 overflow-y-auto">
+              {filtered.length === 0 && !search.trim() && (
+                <div className="px-4 py-3 text-sm text-navy-400">Aucun type disponible</div>
+              )}
+              {filtered.map((label) => (
+                <button
+                  key={label.id}
+                  type="button"
+                  onClick={() => selectType(label.label)}
+                  className="w-full text-left px-4 py-2.5 text-sm text-navy-700 hover:bg-primary-50 transition-colors"
+                >
+                  {label.label}
+                </button>
+              ))}
+              {search.trim() && !exactMatch && (
+                <button
+                  type="button"
+                  onClick={createAndSelect}
+                  disabled={loadingCreate}
+                  className="w-full text-left px-4 py-2.5 text-sm text-primary-600 hover:bg-primary-50 transition-colors flex items-center gap-2 border-t border-navy-100"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  Créer &quot;{search.trim()}&quot;
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

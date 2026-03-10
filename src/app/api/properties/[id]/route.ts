@@ -58,14 +58,13 @@ export async function GET(
   }
 }
 
-// PUT /api/properties/[id] — Modifier un bien (toggle visibilité)
+// PUT /api/properties/[id] — Modifier un bien
 export async function PUT(
   req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   const session = await getSession();
   if (!session) return unauthorized();
-  if (!isAdmin(session)) return forbidden();
 
   try {
     const property = await prisma.property.findUnique({ where: { id: params.id } });
@@ -74,7 +73,32 @@ export async function PUT(
     const body = await req.json();
     const data: Record<string, unknown> = {};
 
-    if (body.isHidden !== undefined) data.isHidden = body.isHidden;
+    // Toggle visibilité (admin only)
+    if (body.isHidden !== undefined) {
+      if (!isAdmin(session)) return forbidden();
+      data.isHidden = body.isHidden;
+    }
+
+    // Champs éditables
+    if (body.address !== undefined) data.address = body.address;
+    if (body.city !== undefined) data.city = body.city || null;
+    if (body.postalCode !== undefined) data.postalCode = body.postalCode || null;
+    if (body.lat !== undefined) data.lat = body.lat;
+    if (body.lng !== undefined) data.lng = body.lng;
+    if (body.propertyType !== undefined) data.propertyType = body.propertyType || null;
+    if (body.rentHT !== undefined) data.rentHT = body.rentHT;
+    if (body.rentPeriod !== undefined) data.rentPeriod = body.rentPeriod;
+    if (body.priceFAI !== undefined) data.priceFAI = body.priceFAI;
+
+    // Apporteur (société OU contact, mutuellement exclusif)
+    if (body.apportedByCompanyId !== undefined) {
+      data.apportedByCompanyId = body.apportedByCompanyId || null;
+      data.apportedByContactId = null;
+    }
+    if (body.apportedByContactId !== undefined) {
+      data.apportedByContactId = body.apportedByContactId || null;
+      data.apportedByCompanyId = null;
+    }
 
     const updated = await prisma.property.update({
       where: { id: params.id },

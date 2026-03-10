@@ -17,39 +17,64 @@ export async function POST(
     if (!contact) return notFound("Contact introuvable");
 
     const formData = await req.formData();
-    const file = formData.get("file") as File | null;
+    const files = formData.getAll("files") as File[];
+    const folderId = formData.get("folderId") as string | null;
+
+    const singleFile = formData.get("file") as File | null;
     const title = formData.get("title") as string | null;
     const note = formData.get("note") as string | null;
-
-    if (!file || !title) {
-      return NextResponse.json(
-        { error: "Le fichier et le titre sont requis" },
-        { status: 400 }
-      );
-    }
 
     const uploadDir = path.join(process.cwd(), "uploads", "contacts", params.id);
     await mkdir(uploadDir, { recursive: true });
 
-    const bytes = await file.arrayBuffer();
-    const buffer = Buffer.from(bytes);
-    const fileName = `${Date.now()}-${file.name}`;
-    const filePath = path.join(uploadDir, fileName);
-    await writeFile(filePath, buffer);
+    const created = [];
 
-    const document = await prisma.contactDocument.create({
-      data: {
-        contactId: params.id,
-        title,
-        note: note || null,
-        filePath: `/uploads/contacts/${params.id}/${fileName}`,
-        fileName: file.name,
-        mimeType: file.type || null,
-        size: file.size || null,
-      },
-    });
+    if (singleFile && title) {
+      const bytes = await singleFile.arrayBuffer();
+      const buffer = Buffer.from(bytes);
+      const fileName = `${Date.now()}-${singleFile.name}`;
+      await writeFile(path.join(uploadDir, fileName), buffer);
 
-    return NextResponse.json(document, { status: 201 });
+      const document = await prisma.contactDocument.create({
+        data: {
+          contactId: params.id,
+          folderId: folderId || null,
+          title,
+          note: note || null,
+          filePath: `/uploads/contacts/${params.id}/${fileName}`,
+          fileName: singleFile.name,
+          mimeType: singleFile.type || null,
+          size: singleFile.size || null,
+        },
+      });
+      created.push(document);
+    } else if (files.length > 0) {
+      for (const file of files) {
+        if (!(file instanceof File) || file.size === 0) continue;
+        const bytes = await file.arrayBuffer();
+        const buffer = Buffer.from(bytes);
+        const fileName = `${Date.now()}-${file.name}`;
+        await writeFile(path.join(uploadDir, fileName), buffer);
+
+        const document = await prisma.contactDocument.create({
+          data: {
+            contactId: params.id,
+            folderId: folderId || null,
+            title: file.name,
+            note: null,
+            filePath: `/uploads/contacts/${params.id}/${fileName}`,
+            fileName: file.name,
+            mimeType: file.type || null,
+            size: file.size || null,
+          },
+        });
+        created.push(document);
+      }
+    } else {
+      return NextResponse.json({ error: "Au moins un fichier est requis" }, { status: 400 });
+    }
+
+    return NextResponse.json(created.length === 1 ? created[0] : created, { status: 201 });
   } catch (error) {
     return serverError(error);
   }

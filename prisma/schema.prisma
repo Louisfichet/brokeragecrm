@@ -143,6 +143,7 @@ model CompanyNote {
 model CompanyDocument {
   id        String   @id @default(cuid())
   companyId String
+  folderId  String?
   title     String
   note      String?
   filePath  String
@@ -151,8 +152,10 @@ model CompanyDocument {
   size      Int?
   createdAt DateTime @default(now())
 
-  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  company Company          @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  folder  DocumentFolder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
+  @@index([folderId])
   @@map("company_documents")
 }
 
@@ -234,6 +237,7 @@ model ContactNote {
 model ContactDocument {
   id        String   @id @default(cuid())
   contactId String
+  folderId  String?
   title     String
   note      String?
   filePath  String
@@ -242,8 +246,10 @@ model ContactDocument {
   size      Int?
   createdAt DateTime @default(now())
 
-  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contact Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  folder  DocumentFolder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
+  @@index([folderId])
   @@map("contact_documents")
 }
 
@@ -316,6 +322,7 @@ model PropertyPhoto {
 model PropertyDocument {
   id         String   @id @default(cuid())
   propertyId String
+  folderId   String?
   title      String
   note       String?
   filePath   String
@@ -324,8 +331,10 @@ model PropertyDocument {
   size       Int?
   createdAt  DateTime @default(now())
 
-  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  property Property         @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  folder   DocumentFolder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
 
+  @@index([folderId])
   @@map("property_documents")
 }
 
@@ -525,6 +534,36 @@ model CompanySettings {
   updatedAt             DateTime @updatedAt
 
   @@map("company_settings")
+}
+
+// ============================================
+// DOCUMENT FOLDERS (arborescence dossiers)
+// ============================================
+
+enum EntityType {
+  PROPERTY
+  COMPANY
+  CONTACT
+}
+
+model DocumentFolder {
+  id         String      @id @default(cuid())
+  name       String
+  entityType EntityType
+  entityId   String
+  parentId   String?
+  parent     DocumentFolder?  @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children   DocumentFolder[] @relation("FolderTree")
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  propertyDocuments PropertyDocument[]
+  companyDocuments  CompanyDocument[]
+  contactDocuments  ContactDocument[]
+
+  @@index([entityType, entityId])
+  @@index([parentId])
+  @@map("document_folders")
 }
 
 // ============================================
