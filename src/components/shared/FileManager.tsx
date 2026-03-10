@@ -10,7 +10,6 @@ import {
   Trash2,
   ChevronRight,
   Home,
-  MoreVertical,
   Pencil,
   ArrowLeft,
   File,
@@ -117,7 +116,6 @@ export default function FileManager({
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; type: "folder" | "file"; name: string } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const folderInputRef = useRef<HTMLInputElement>(null);
   const newFolderInputRef = useRef<HTMLInputElement>(null);
   const renameInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
