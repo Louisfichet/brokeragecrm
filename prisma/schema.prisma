@@ -69,6 +69,8 @@ model User {
   updatedAt DateTime @updatedAt
 
   propertiesCreated     Property[]
+  companiesCreated      Company[]          @relation("companiesCreated")
+  contactsCreated       Contact[]          @relation("contactsCreated")
   eventsCreated         CalendarEvent[]    @relation("eventsCreated")
   eventParticipations   EventParticipant[]
   documentsCreated      GeneratedDocument[]
@@ -90,6 +92,7 @@ model Company {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   createdById String?
+  createdBy   User?    @relation("companiesCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   // Informations juridiques
   formeJuridique  String?
@@ -102,11 +105,12 @@ model Company {
   representantNom      String?
   representantQualite  String?
 
-  types     CompanyType[]
-  contacts  Contact[]
-  notes     CompanyNote[]
-  documents CompanyDocument[]
-  specs     CompanySpec[]
+  types       CompanyType[]
+  searchTypes CompanySearchType[]
+  contacts    Contact[]
+  notes       CompanyNote[]
+  documents   CompanyDocument[]
+  specs       CompanySpec[]
 
   propertiesApported    Property[]
   proposalsReceived     PropertyProposal[]
@@ -204,12 +208,14 @@ model Contact {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   createdById String?
+  createdBy   User?    @relation("contactsCreated", fields: [createdById], references: [id], onDelete: SetNull)
 
   // Informations juridiques
   civilite    String?
   adresse     String?
 
   company            Company?  @relation(fields: [companyId], references: [id], onDelete: SetNull)
+  searchTypes        ContactSearchType[]
   propertiesApported Property[] @relation("ContactApporter")
   proposalsReceived  PropertyProposal[]
   notes              ContactNote[]
@@ -251,6 +257,45 @@ model ContactDocument {
 
   @@index([folderId])
   @@map("contact_documents")
+}
+
+// ============================================
+// SEARCH TYPE (Type de recherche)
+// ============================================
+
+model SearchType {
+  id        String   @id @default(cuid())
+  label     String   @unique
+  createdAt DateTime @default(now())
+
+  companies CompanySearchType[]
+  contacts  ContactSearchType[]
+
+  @@map("search_types")
+}
+
+model CompanySearchType {
+  id           String @id @default(cuid())
+  companyId    String
+  searchTypeId String
+
+  company    Company    @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  searchType SearchType @relation(fields: [searchTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([companyId, searchTypeId])
+  @@map("company_search_types")
+}
+
+model ContactSearchType {
+  id           String @id @default(cuid())
+  contactId    String
+  searchTypeId String
+
+  contact    Contact    @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  searchType SearchType @relation(fields: [searchTypeId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, searchTypeId])
+  @@map("contact_search_types")
 }
 
 // ============================================

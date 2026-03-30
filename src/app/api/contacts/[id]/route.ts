@@ -24,6 +24,8 @@ export async function GET(
       where: { id: params.id },
       include: {
         company: { include: { types: true } },
+        searchTypes: { include: { searchType: true } },
+        createdBy: { select: { name: true } },
         notes: { orderBy: { createdAt: "desc" } },
         documents: { orderBy: { createdAt: "desc" } },
         propertiesApported: {
@@ -62,7 +64,7 @@ export async function PUT(
 
   try {
     const body = await req.json();
-    const { firstName, lastName, email, phone, role, companyId, isHidden, civilite, adresse } = body;
+    const { firstName, lastName, email, phone, role, companyId, isHidden, civilite, adresse, searchTypeLabels } = body;
 
     if (isHidden !== undefined && !isAdmin(session)) {
       return forbidden();
@@ -78,7 +80,7 @@ export async function PUT(
       const updated = await prisma.contact.update({
         where: { id: params.id },
         data: { isHidden },
-        include: { company: { include: { types: true } } },
+        include: { company: { include: { types: true } }, searchTypes: { include: { searchType: true } } },
       });
       logActivity({
         userId: session.user.id,
@@ -94,6 +96,24 @@ export async function PUT(
     if (!firstName) return badRequest("Le prénom est requis");
     if (!email && !phone) return badRequest("Un email ou un téléphone est requis");
 
+    // Mettre à jour les types de recherche
+    let searchTypeConnects: { searchTypeId: string }[] | undefined;
+    if (searchTypeLabels !== undefined) {
+      await prisma.contactSearchType.deleteMany({ where: { contactId: params.id } });
+      if (searchTypeLabels.length > 0) {
+        const searchTypes = await Promise.all(
+          searchTypeLabels.map((label: string) =>
+            prisma.searchType.upsert({
+              where: { label: label.trim() },
+              update: {},
+              create: { label: label.trim() },
+            })
+          )
+        );
+        searchTypeConnects = searchTypes.map((st) => ({ searchTypeId: st.id }));
+      }
+    }
+
     const contact = await prisma.contact.update({
       where: { id: params.id },
       data: {
@@ -106,8 +126,11 @@ export async function PUT(
         ...(isHidden !== undefined && { isHidden }),
         ...(civilite !== undefined && { civilite: civilite || null }),
         ...(adresse !== undefined && { adresse: adresse || null }),
+        ...(searchTypeConnects && {
+          searchTypes: { create: searchTypeConnects },
+        }),
       },
-      include: { company: { include: { types: true } } },
+      include: { company: { include: { types: true } }, searchTypes: { include: { searchType: true } } },
     });
 
     logActivity({

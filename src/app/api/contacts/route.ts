@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const search = searchParams.get("search") || "";
     const independent = searchParams.get("independent") === "true";
+    const searchType = searchParams.get("searchType") || "";
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
     const skip = (page - 1) * limit;
@@ -41,11 +42,16 @@ export async function GET(req: NextRequest) {
       ];
     }
 
+    if (searchType) {
+      where.searchTypes = { some: { searchType: { label: searchType } } };
+    }
+
     const [contacts, total] = await Promise.all([
       prisma.contact.findMany({
         where,
         include: {
           company: { include: { types: true } },
+          searchTypes: { include: { searchType: true } },
         },
         orderBy: { createdAt: "desc" },
         skip,
@@ -75,7 +81,7 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { firstName, lastName, email, phone, role, companyId } = body;
+    const { firstName, lastName, email, phone, role, companyId, searchTypeLabels } = body;
 
     if (!firstName) {
       return badRequest("Le prénom est requis");
@@ -83,6 +89,21 @@ export async function POST(req: NextRequest) {
 
     if (!email && !phone) {
       return badRequest("Un email ou un téléphone est requis");
+    }
+
+    // Upsert search types if provided
+    let searchTypeConnects: { searchTypeId: string }[] = [];
+    if (searchTypeLabels && searchTypeLabels.length > 0) {
+      const searchTypes = await Promise.all(
+        searchTypeLabels.map((label: string) =>
+          prisma.searchType.upsert({
+            where: { label: label.trim() },
+            update: {},
+            create: { label: label.trim() },
+          })
+        )
+      );
+      searchTypeConnects = searchTypes.map((st) => ({ searchTypeId: st.id }));
     }
 
     const contact = await prisma.contact.create({
@@ -94,8 +115,11 @@ export async function POST(req: NextRequest) {
         role: role || null,
         companyId: companyId || null,
         createdById: session.user.id,
+        ...(searchTypeConnects.length > 0 && {
+          searchTypes: { create: searchTypeConnects },
+        }),
       },
-      include: { company: { include: { types: true } } },
+      include: { company: { include: { types: true } }, searchTypes: { include: { searchType: true } } },
     });
 
     logActivity({

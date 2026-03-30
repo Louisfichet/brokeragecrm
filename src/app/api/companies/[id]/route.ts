@@ -24,6 +24,8 @@ export async function GET(
       where: { id: params.id },
       include: {
         types: true,
+        searchTypes: { include: { searchType: true } },
+        createdBy: { select: { name: true } },
         contacts: { orderBy: { createdAt: "desc" } },
         notes: { orderBy: { createdAt: "desc" } },
         documents: { orderBy: { createdAt: "desc" } },
@@ -65,7 +67,7 @@ export async function PUT(
   try {
     const body = await req.json();
     const {
-      name, website, description, types, isHidden,
+      name, website, description, types, searchTypeLabels, isHidden,
       formeJuridique, capitalSocial, siret, villeRCS, adresseSiege,
       representantCivilite, representantPrenom, representantNom, representantQualite,
     } = body;
@@ -85,7 +87,7 @@ export async function PUT(
       const updated = await prisma.company.update({
         where: { id: params.id },
         data: { isHidden },
-        include: { types: true },
+        include: { types: true, searchTypes: { include: { searchType: true } } },
       });
       logActivity({
         userId: session.user.id,
@@ -103,6 +105,24 @@ export async function PUT(
     // Mettre à jour les types : supprimer les anciens, créer les nouveaux
     if (types) {
       await prisma.companyType.deleteMany({ where: { companyId: params.id } });
+    }
+
+    // Mettre à jour les types de recherche
+    let searchTypeConnects: { searchTypeId: string }[] | undefined;
+    if (searchTypeLabels !== undefined) {
+      await prisma.companySearchType.deleteMany({ where: { companyId: params.id } });
+      if (searchTypeLabels.length > 0) {
+        const searchTypes = await Promise.all(
+          searchTypeLabels.map((label: string) =>
+            prisma.searchType.upsert({
+              where: { label: label.trim() },
+              update: {},
+              create: { label: label.trim() },
+            })
+          )
+        );
+        searchTypeConnects = searchTypes.map((st) => ({ searchTypeId: st.id }));
+      }
     }
 
     const company = await prisma.company.update({
@@ -124,8 +144,11 @@ export async function PUT(
         ...(types && {
           types: { create: types.map((t: string) => ({ type: t })) },
         }),
+        ...(searchTypeConnects && {
+          searchTypes: { create: searchTypeConnects },
+        }),
       },
-      include: { types: true },
+      include: { types: true, searchTypes: { include: { searchType: true } } },
     });
 
     logActivity({

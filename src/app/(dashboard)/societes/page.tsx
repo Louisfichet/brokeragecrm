@@ -36,6 +36,7 @@ interface Company {
   website: string | null;
   isHidden: boolean;
   types: { type: string }[];
+  searchTypes: { searchType: { id: string; label: string } }[];
   contacts: { id: string; firstName: string; lastName: string | null; email: string | null; phone: string | null }[];
   _count: { propertiesApported: number; proposalsReceived: number };
   createdAt: string;
@@ -48,6 +49,7 @@ interface Contact {
   email: string | null;
   phone: string | null;
   isHidden: boolean;
+  searchTypes: { searchType: { id: string; label: string } }[];
   company: null;
   createdAt: string;
 }
@@ -58,15 +60,27 @@ export default function SocietesPage() {
   const [tab, setTab] = useState<Tab>("societes");
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [searchTypeFilter, setSearchTypeFilter] = useState("");
   const [page, setPage] = useState(1);
 
   const [companies, setCompanies] = useState<Company[]>([]);
   const [contacts, setContacts] = useState<Contact[]>([]);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [allSearchTypes, setAllSearchTypes] = useState<{ id: string; label: string }[]>([]);
 
   const [showCompanyModal, setShowCompanyModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
+
+  const fetchSearchTypes = useCallback(async () => {
+    try {
+      const res = await fetch("/api/search-types");
+      const data = await res.json();
+      setAllSearchTypes(data);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -77,6 +91,7 @@ export default function SocietesPage() {
           limit: "20",
           ...(search && { search }),
           ...(typeFilter && { type: typeFilter }),
+          ...(searchTypeFilter && { searchType: searchTypeFilter }),
         });
         const res = await fetch(`/api/companies?${params}`);
         const data = await res.json();
@@ -88,6 +103,7 @@ export default function SocietesPage() {
           limit: "20",
           independent: "true",
           ...(search && { search }),
+          ...(searchTypeFilter && { searchType: searchTypeFilter }),
         });
         const res = await fetch(`/api/contacts?${params}`);
         const data = await res.json();
@@ -99,7 +115,11 @@ export default function SocietesPage() {
     } finally {
       setLoading(false);
     }
-  }, [tab, page, search, typeFilter]);
+  }, [tab, page, search, typeFilter, searchTypeFilter]);
+
+  useEffect(() => {
+    fetchSearchTypes();
+  }, [fetchSearchTypes]);
 
   useEffect(() => {
     fetchData();
@@ -107,7 +127,7 @@ export default function SocietesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [tab, search, typeFilter]);
+  }, [tab, search, typeFilter, searchTypeFilter]);
 
   return (
     <div>
@@ -190,6 +210,23 @@ export default function SocietesPage() {
               </select>
             </div>
           )}
+          {allSearchTypes.length > 0 && (
+            <div className="relative">
+              <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-navy-400" />
+              <select
+                value={searchTypeFilter}
+                onChange={(e) => setSearchTypeFilter(e.target.value)}
+                className="pl-10 pr-8 py-2.5 rounded-xl border border-navy-200 bg-white text-navy-900 text-sm focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent appearance-none"
+              >
+                <option value="">Toutes les recherches</option>
+                {allSearchTypes.map((st) => (
+                  <option key={st.id} value={st.label}>
+                    {st.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
         </div>
 
         {/* Table */}
@@ -218,6 +255,9 @@ export default function SocietesPage() {
                     <tr className="border-b border-navy-100">
                       <th className="text-left text-xs font-medium text-navy-500 uppercase tracking-wider px-4 py-3">
                         Société
+                      </th>
+                      <th className="text-left text-xs font-medium text-navy-500 uppercase tracking-wider px-4 py-3">
+                        Recherche
                       </th>
                       <th className="text-left text-xs font-medium text-navy-500 uppercase tracking-wider px-4 py-3">
                         Type(s)
@@ -255,6 +295,22 @@ export default function SocietesPage() {
                               {company.website}
                             </p>
                           )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex gap-1 flex-wrap">
+                            {company.searchTypes.map((st) => (
+                              <Badge
+                                key={st.searchType.id}
+                                variant="purple"
+                                size="sm"
+                              >
+                                {st.searchType.label}
+                              </Badge>
+                            ))}
+                            {company.searchTypes.length === 0 && (
+                              <span className="text-sm text-navy-400">—</span>
+                            )}
+                          </div>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex gap-1.5 flex-wrap">
@@ -309,6 +365,15 @@ export default function SocietesPage() {
                               {TYPE_LABELS[t.type] || t.type}
                             </Badge>
                           ))}
+                          {company.searchTypes.map((st) => (
+                            <Badge
+                              key={st.searchType.id}
+                              variant="purple"
+                              size="sm"
+                            >
+                              {st.searchType.label}
+                            </Badge>
+                          ))}
                         </div>
                       </div>
                       <span className="text-xs text-navy-400 whitespace-nowrap ml-2">
@@ -343,6 +408,9 @@ export default function SocietesPage() {
                       Nom
                     </th>
                     <th className="text-left text-xs font-medium text-navy-500 uppercase tracking-wider px-4 py-3">
+                      Recherche
+                    </th>
+                    <th className="text-left text-xs font-medium text-navy-500 uppercase tracking-wider px-4 py-3">
                       Email
                     </th>
                     <th className="text-left text-xs font-medium text-navy-500 uppercase tracking-wider px-4 py-3">
@@ -368,6 +436,22 @@ export default function SocietesPage() {
                             <Badge variant="red" size="sm">
                               <EyeOff className="w-3 h-3" /> Caché
                             </Badge>
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-1 flex-wrap">
+                          {contact.searchTypes.map((st) => (
+                            <Badge
+                              key={st.searchType.id}
+                              variant="purple"
+                              size="sm"
+                            >
+                              {st.searchType.label}
+                            </Badge>
+                          ))}
+                          {contact.searchTypes.length === 0 && (
+                            <span className="text-sm text-navy-400">—</span>
                           )}
                         </div>
                       </td>
@@ -437,11 +521,17 @@ export default function SocietesPage() {
       {/* Modals */}
       <CreateCompanyModal
         isOpen={showCompanyModal}
-        onClose={() => setShowCompanyModal(false)}
+        onClose={() => {
+          setShowCompanyModal(false);
+          fetchSearchTypes();
+        }}
       />
       <CreateContactModal
         isOpen={showContactModal}
-        onClose={() => setShowContactModal(false)}
+        onClose={() => {
+          setShowContactModal(false);
+          fetchSearchTypes();
+        }}
       />
     </div>
   );

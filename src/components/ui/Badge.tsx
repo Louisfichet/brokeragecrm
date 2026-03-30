@@ -1,6 +1,6 @@
 interface BadgeProps {
   children: React.ReactNode;
-  variant?: "blue" | "green" | "orange" | "red" | "gray";
+  variant?: "blue" | "green" | "orange" | "red" | "gray" | "purple";
   size?: "sm" | "md";
 }
 
@@ -10,6 +10,7 @@ const variantClasses = {
   orange: "bg-amber-50 text-amber-700 border-amber-200",
   red: "bg-red-50 text-red-700 border-red-200",
   gray: "bg-navy-50 text-navy-600 border-navy-200",
+  purple: "bg-purple-50 text-purple-700 border-purple-200",
 };
 
 const sizeClasses = {

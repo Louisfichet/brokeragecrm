@@ -18,6 +18,7 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const search = searchParams.get("search") || "";
     const type = searchParams.get("type") || "";
+    const searchType = searchParams.get("searchType") || "";
     const page = parseInt(searchParams.get("page") || "1");
     const limit = parseInt(searchParams.get("limit") || "20");
     const skip = (page - 1) * limit;
@@ -40,11 +41,16 @@ export async function GET(req: NextRequest) {
       where.types = { some: { type: type } };
     }
 
+    if (searchType) {
+      where.searchTypes = { some: { searchType: { label: searchType } } };
+    }
+
     const [companies, total] = await Promise.all([
       prisma.company.findMany({
         where,
         include: {
           types: true,
+          searchTypes: { include: { searchType: true } },
           contacts: true,
           _count: { select: { propertiesApported: true, proposalsReceived: true } },
         },
@@ -76,10 +82,25 @@ export async function POST(req: NextRequest) {
 
   try {
     const body = await req.json();
-    const { name, website, description, types } = body;
+    const { name, website, description, types, searchTypeLabels } = body;
 
     if (!name || !types || types.length === 0) {
       return badRequest("Le nom et au moins un type sont requis");
+    }
+
+    // Upsert search types if provided
+    let searchTypeConnects: { searchTypeId: string }[] = [];
+    if (searchTypeLabels && searchTypeLabels.length > 0) {
+      const searchTypes = await Promise.all(
+        searchTypeLabels.map((label: string) =>
+          prisma.searchType.upsert({
+            where: { label: label.trim() },
+            update: {},
+            create: { label: label.trim() },
+          })
+        )
+      );
+      searchTypeConnects = searchTypes.map((st) => ({ searchTypeId: st.id }));
     }
 
     const company = await prisma.company.create({
@@ -91,8 +112,11 @@ export async function POST(req: NextRequest) {
         types: {
           create: types.map((t: string) => ({ type: t })),
         },
+        ...(searchTypeConnects.length > 0 && {
+          searchTypes: { create: searchTypeConnects },
+        }),
       },
-      include: { types: true },
+      include: { types: true, searchTypes: { include: { searchType: true } } },
     });
 
     logActivity({

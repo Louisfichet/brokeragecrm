@@ -6,6 +6,7 @@ import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
 import Textarea from "@/components/ui/Textarea";
 import Button from "@/components/ui/Button";
+import SearchTypeInput from "@/components/ui/SearchTypeInput";
 
 const COMPANY_TYPES = [
   { value: "APPORTEUR", label: "Apporteur" },
@@ -30,6 +31,7 @@ export default function CreateCompanyModal({
     website: "",
     description: "",
     types: [] as string[],
+    searchTypeLabels: [] as string[],
   });
 
   const toggleType = (type: string) => {
@@ -70,7 +72,7 @@ export default function CreateCompanyModal({
 
       const company = await res.json();
       onClose();
-      setForm({ name: "", website: "", description: "", types: [] });
+      setForm({ name: "", website: "", description: "", types: [], searchTypeLabels: [] });
       router.push(`/societes/${company.id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Erreur");
@@ -110,6 +112,12 @@ export default function CreateCompanyModal({
             ))}
           </div>
         </div>
+
+        <SearchTypeInput
+          label="Type(s) de recherche"
+          value={form.searchTypeLabels}
+          onChange={(val) => setForm({ ...form, searchTypeLabels: val })}
+        />
 
         <Input
           label="Site web"

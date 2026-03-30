@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
 import Button from "@/components/ui/Button";
+import SearchTypeInput from "@/components/ui/SearchTypeInput";
 
 interface CreateContactModalProps {
   isOpen: boolean;
@@ -28,6 +29,7 @@ export default function CreateContactModal({
     email: "",
     phone: "",
     role: "",
+    searchTypeLabels: [] as string[],
   });
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -63,7 +65,7 @@ export default function CreateContactModal({
 
       const contact = await res.json();
       onClose();
-      setForm({ firstName: "", lastName: "", email: "", phone: "", role: "" });
+      setForm({ firstName: "", lastName: "", email: "", phone: "", role: "", searchTypeLabels: [] });
 
       if (onCreated) {
         onCreated();
@@ -114,6 +116,14 @@ export default function CreateContactModal({
           value={form.phone}
           onChange={(e) => setForm({ ...form, phone: e.target.value })}
         />
+
+        {!companyId && (
+          <SearchTypeInput
+            label="Type(s) de recherche"
+            value={form.searchTypeLabels}
+            onChange={(val) => setForm({ ...form, searchTypeLabels: val })}
+          />
+        )}
 
         {companyId && (
           <Input

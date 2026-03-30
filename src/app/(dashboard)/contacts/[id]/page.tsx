@@ -19,6 +19,7 @@ import Modal from "@/components/ui/Modal";
 import Input from "@/components/ui/Input";
 import NotesSection from "@/components/shared/NotesSection";
 import FileManager from "@/components/shared/FileManager";
+import SearchTypeInput from "@/components/ui/SearchTypeInput";
 
 interface ContactData {
   id: string;
@@ -30,6 +31,9 @@ interface ContactData {
   role: string | null;
   civilite: string | null;
   adresse: string | null;
+  createdBy: { name: string } | null;
+  createdAt: string;
+  searchTypes: { searchType: { id: string; label: string } }[];
   company: { id: string; name: string; types: { type: string }[] } | null;
   notes: { id: string; title: string; content: string; createdAt: string }[];
   documents: {
@@ -74,6 +78,7 @@ export default function ContactDetailPage() {
     role: "",
     civilite: "",
     adresse: "",
+    searchTypeLabels: [] as string[],
   });
   const [editLoading, setEditLoading] = useState(false);
 
@@ -107,6 +112,7 @@ export default function ContactDetailPage() {
       role: contact.role || "",
       civilite: contact.civilite || "",
       adresse: contact.adresse || "",
+      searchTypeLabels: contact.searchTypes.map((st) => st.searchType.label),
     });
     setShowEditModal(true);
   };
@@ -173,10 +179,19 @@ export default function ContactDetailPage() {
       <div className="bg-white rounded-2xl border border-navy-100 shadow-sm p-5">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
           <div>
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
               <h1 className="text-xl font-bold text-navy-900">
                 {contact.firstName} {contact.lastName || ""}
               </h1>
+              {contact.searchTypes.map((st) => (
+                <Badge
+                  key={st.searchType.id}
+                  variant="purple"
+                  size="md"
+                >
+                  {st.searchType.label}
+                </Badge>
+              ))}
               {contact.isHidden && (
                 <Badge variant="red" size="md">
                   Caché
@@ -212,6 +227,19 @@ export default function ContactDetailPage() {
                 </Link>
               </p>
             )}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-navy-500">
+              {contact.createdBy && (
+                <span>Créé par {contact.createdBy.name}</span>
+              )}
+              {contact.createdBy && <span>·</span>}
+              <span>
+                {new Date(contact.createdAt).toLocaleDateString("fr-FR", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}
+              </span>
+            </div>
           </div>
           <div className="flex gap-2 flex-shrink-0">
             {admin && (
@@ -383,6 +411,12 @@ export default function ContactDetailPage() {
             onChange={(e) =>
               setEditForm({ ...editForm, phone: e.target.value })
             }
+          />
+
+          <SearchTypeInput
+            label="Type(s) de recherche"
+            value={editForm.searchTypeLabels}
+            onChange={(val) => setEditForm({ ...editForm, searchTypeLabels: val })}
           />
 
           {/* Informations juridiques */}

@@ -24,6 +24,7 @@ import Textarea from "@/components/ui/Textarea";
 import NotesSection from "@/components/shared/NotesSection";
 import FileManager from "@/components/shared/FileManager";
 import CreateContactModal from "@/components/contacts/CreateContactModal";
+import SearchTypeInput from "@/components/ui/SearchTypeInput";
 
 const TYPE_LABELS: Record<string, string> = {
   APPORTEUR: "Apporteur",
@@ -51,7 +52,10 @@ interface CompanyData {
   representantPrenom: string | null;
   representantNom: string | null;
   representantQualite: string | null;
+  createdBy: { name: string } | null;
+  createdAt: string;
   types: { type: string }[];
+  searchTypes: { searchType: { id: string; label: string } }[];
   contacts: {
     id: string;
     firstName: string;
@@ -117,6 +121,7 @@ export default function CompanyDetailPage() {
     website: "",
     description: "",
     types: [] as string[],
+    searchTypeLabels: [] as string[],
     formeJuridique: "",
     capitalSocial: "",
     siret: "",
@@ -156,6 +161,7 @@ export default function CompanyDetailPage() {
       website: company.website || "",
       description: company.description || "",
       types: company.types.map((t) => t.type),
+      searchTypeLabels: company.searchTypes.map((st) => st.searchType.label),
       formeJuridique: company.formeJuridique || "",
       capitalSocial: company.capitalSocial || "",
       siret: company.siret || "",
@@ -255,6 +261,15 @@ export default function CompanyDetailPage() {
                   {TYPE_LABELS[t.type] || t.type}
                 </Badge>
               ))}
+              {company.searchTypes.map((st) => (
+                <Badge
+                  key={st.searchType.id}
+                  variant="purple"
+                  size="md"
+                >
+                  {st.searchType.label}
+                </Badge>
+              ))}
               {company.isHidden && (
                 <Badge variant="red" size="md">
                   Caché
@@ -280,6 +295,19 @@ export default function CompanyDetailPage() {
                 {company.description}
               </p>
             )}
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-sm text-navy-500">
+              {company.createdBy && (
+                <span>Créé par {company.createdBy.name}</span>
+              )}
+              {company.createdBy && <span>·</span>}
+              <span>
+                {new Date(company.createdAt).toLocaleDateString("fr-FR", {
+                  day: "numeric",
+                  month: "long",
+                  year: "numeric",
+                })}
+              </span>
+            </div>
           </div>
           <div className="flex gap-2 flex-shrink-0">
             <Button size="sm" variant="secondary" onClick={openEdit}>
@@ -534,6 +562,11 @@ export default function CompanyDetailPage() {
               ))}
             </div>
           </div>
+          <SearchTypeInput
+            label="Type(s) de recherche"
+            value={editForm.searchTypeLabels}
+            onChange={(val) => setEditForm({ ...editForm, searchTypeLabels: val })}
+          />
           <Input
             label="Site web"
             value={editForm.website}
